@@ -68,25 +68,36 @@ def usar_calibracion():
         messagebox.showwarning("Advertencia", "No se seleccionó ningún archivo.")
         return
     try:
-        with open(archivo_calibracion, "r") as archivo:
-            lineas = archivo.readlines()
+        # Intentar abrir el archivo con diferentes codificaciones
+        codificaciones = ["utf-8", "latin-1", "ISO-8859-1"]
+        for codificacion in codificaciones:
+            try:
+                with open(archivo_calibracion, "r", encoding=codificacion) as archivo:
+                    lineas = archivo.readlines()
 
-            # Buscar las líneas que contienen "Pendiente" y "Ordenada"
-            for linea in lineas:
-                if "Pendiente:" in linea:
-                    slope_str = linea.split(":")[1].strip()  # Extraer el valor de la pendiente
-                    slope = float(slope_str.split("+/-")[0].strip())  # Obtener el valor numérico
-                elif "Ordenada:" in linea:
-                    intercept_str = linea.split(":")[1].strip()  # Extraer el valor de la ordenada
-                    intercept = float(intercept_str.split("+/-")[0].strip())  # Obtener el valor numérico
-        if (slope is not None) and (intercept is not None):
-            boton_medir_I0.config(state="normal")
-            barra_progreso['value']=100
-        messagebox.showinfo("Éxito", f"Valores cargados:\nPendiente: {slope}\nOrdenada: {intercept}")
+                    # Buscar las líneas que contienen "Pendiente" y "Ordenada"
+                    for linea in lineas:
+                        if "Pendiente:" in linea:
+                            slope_str = linea.split(":")[1].strip()  # Extraer el valor de la pendiente
+                            slope = float(slope_str.split("+/-")[0].strip())  # Obtener el valor numérico
+                        elif "Ordenada:" in linea:
+                            intercept_str = linea.split(":")[1].strip()  # Extraer el valor de la ordenada
+                            intercept = float(intercept_str.split("+/-")[0].strip())  # Obtener el valor numérico
+
+                if (slope is not None) and (intercept is not None):
+                    boton_medir_I0.config(state="normal")
+                    barra_progreso['value'] = 100
+                    messagebox.showinfo("Éxito", f"Valores cargados:\nPendiente: {slope}\nOrdenada: {intercept}")
+                    break  # Salir del bucle si se leyó correctamente
+            except UnicodeDecodeError:
+                continue  # Intentar con la siguiente codificación si falla
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo leer el archivo: {e}")
+                break
+        else:
+            messagebox.showerror("Error", "No se pudo leer el archivo con ninguna codificación compatible.")
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo leer el archivo: {e}")
-        
-
 #%%Calibrar
 def calibrar(barra_progreso, ventana):
     """Realiza la calibración midiendo intensidades de soluciones conocidas.
@@ -217,7 +228,7 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
     MM=messagebox.askokcancel("Medir muestra", "Coloque la muestra en la cubeta y presione OK...")
     if not MM:
         return None
-    
+    fecha_nombre_archivo=datetime.now().strftime('%y%m%d_%H%M%S')
     concentraciones = []
     barra_progreso_2['value'] = 0
     ventana.update_idletasks()
@@ -246,15 +257,16 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
         conc_promedio = np.mean(np.array(concentraciones))
         err_conc= np.std(np.array(concentraciones))
         Concentracion=ufloat(conc_promedio,err_conc)
-        print(f"Concentracion promedio de la muestra: {Concentracion:.2f} mg/mL")
+        print(f"Concentracion promedio de la muestra: {Concentracion:.3f} mg/mL")
         
-        messagebox.showinfo("Concentracion ", f"Concentración = {Concentracion:.2f}")        
-        nombre_archivo = obtener_nombre_archivo("muestra")
+        messagebox.showinfo("Concentracion ", f"Concentración = {Concentracion:.3f}")        
+        # nombre_archivo = 
         # with open(nombre_archivo, "w") as archivo:
         #     archivo.write("Intensidad promedio, Absorbancia, Concentración estimada (mg/ml)\n")
-        #     archivo.write(f"{promedio_I:.2f}, {absorbancia_muestra:.2f}, {concentracion_muestra:.2f}\n")
+        #     archivo.write("Intensidad promedio, Absorbancia, Concentración estimada (mg/ml)\n")
+        #     archivo.write(f"{promedio_I:.3f}, {absorbancia_muestra:.3f}, {concentracion_muestra:.3f}\n")
         
-        # print(f"Datos de la muestra guardados en {nombre_archivo}")
+        print(f"Datos de la muestra guardados en {nombre_archivo}")
     else:
         print("Error: No se obtuvieron suficientes mediciones.")
 
@@ -274,7 +286,16 @@ for puerto in puertos_disponibles:
             break  # Salir del bucle después de encontrar el primer ttyUSB* activo
         except (serial.SerialException, OSError):
             print(f"Puerto inactivo: {puerto.device}")
-
+    elif "COM" in puerto.device:  # Verificar si el puerto es COM* (windows)
+        try:
+            # Intenta abrir el puerto
+            conexion = serial.Serial(puerto.device)
+            conexion.close()  # Cierra la conexión
+            print(f"Puerto activo: {puerto.device}")
+            puerto_activo = puerto.device  # Guardar el nombre del puerto activo
+            break  # Salir del bucle después de encontrar el primer ttyUSB* activo
+        except (serial.SerialException, OSError):
+            print(f"Puerto inactivo: {puerto.device}")
 # Verificar si se encontró un puerto USB activo
 if puerto_activo:
     print('-' * 40, '\n', f"Puerto seleccionado: {puerto_activo}")
@@ -283,6 +304,7 @@ else:
     exit()
 puerto = puerto_activo  # lo detecta automaticamente para que sea cross plataform 
 baudrate = 9600    
+################################################################################################################
 #%% Ejecución
 try:
     ser = serial.Serial(puerto, baudrate, timeout=1)
