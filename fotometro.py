@@ -6,16 +6,11 @@ import numpy as np
 import scipy.stats as stats
 from datetime import datetime
 import tkinter as tk
-from tkinter import simpledialog, messagebox, ttk, filedialog
+from tkinter import simpledialog, messagebox, ttk, filedialog, scrolledtext
 from uncertainties import ufloat, unumpy
 import matplotlib.pyplot as plt
 import os
 import chardet
-#%% Funciones
-def obtener_nombre_archivo(prefijo):
-    """Genera un nombre de archivo único basado en la fecha y hora actual."""
-    fecha_hora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    return f"{prefijo}_{fecha_hora}.txt"
 #%% Medir Intensidad c/Arduino
 def medir_intensidad(comando, barra_progreso=None, ventana=None):
     """Mide la intensidad del sensor (I0 o I) según el comando dado y devuelve el promedio de 10 mediciones."""
@@ -214,7 +209,7 @@ def medir_fondo(barra_progreso_3,ventana):
         barra_progreso_3['value']=0
         return None, None
     
-    messagebox.showinfo("Información", f"I0_bis = {I0_bis:.2f}")
+    messagebox.showinfo("Información", f"I0 = {I0_bis:.2f}")
     barra_progreso_3['value']=0
     ventana.update_idletasks()
     return I0_bis
@@ -229,6 +224,7 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
     if I0 is None or slope is None or intercept is None:
         messagebox.showerror("Error", "No se ha realizado la calibración. Verifique los valores de I0, slope e intercept.")
         return None
+    print('-'*50,'\nmedida de muestra iniciada')
     
     MM0=messagebox.askokcancel("Medir fondo", "Coloque la cubeta con agua y presione OK para medir el fondo")
     if not MM0:
@@ -242,21 +238,25 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
     dif_relativa_I0=abs((I0_bis-I0)/I0)
     if dif_relativa_I0<0.1:
         print(f'Diferencia relativa en el fondo menor al 10% ({100*dif_relativa_I0})')
+        Dif_menor=messagebox.askokcancel("Medir fondo", "Coloque la cubeta con agua y presione OK para medir el fondo")
     else:
-        print(f'Diferencia relativa en el fondo {100*dif_relativa_I0}')
+        print(f'Diferencia relativa en el fondo {100*dif_relativa_I0:1f}%')
         Cal_again=messagebox.askyesnocancel(title=None, message='Diferencia relativa en el fondo mayor al 10%\nDesea repetir la calibración?')
-    if not Cal_again:
-        print('aaa')
-
-
-
-
+        if Cal_again is True:
+            print("El ususario eligio calibrar de nuevo")
+            calibrar(barra_progreso, ventana)
+        elif Cal_again is False:
+            print("El usuario eligió continuar con la medida")
+            pass
+        else:
+            return None
 
     MM=messagebox.askokcancel("Medir muestra", "Coloque la muestra en la cubeta y presione OK...")
     if not MM:
         return None
     fecha_nombre_archivo=datetime.now().strftime('%y%m%d_%H%M%S')
-    concentraciones = []
+    intensidades , absorbancias , concentraciones =[],[],[]
+    
     barra_progreso_2['value'] = 0
     ventana.update_idletasks()
     for rep in range(3):
@@ -265,15 +265,17 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
 
         intensidad = medir_intensidad("medir", barra_progreso_3, ventana)
         if intensidad is not None:
-            print('I0=',I0)
-            print('I=',intensidad)
+            print('I0 =',I0)
+            print('I =',intensidad)
+            intensidades.append(intensidad)
             absorbancia_muestra = -np.log10(intensidad / I0) #Calculo absorbancia
-            print('Absorbancia=',absorbancia_muestra)
+            absorbancias.append(absorbancia_muestra)
+            print('Absorbancia =',absorbancia_muestra)
             concentracion_muestra = (absorbancia_muestra - intercept) / slope #Calculo concentracion
             concentraciones.append(concentracion_muestra)
-            print(f"Concentración {rep+1}: {concentracion_muestra:.2f} mg/ml")
+            print(f"Concentración {rep+1}/3: {concentracion_muestra:.3e} g/L")
             
-            Med=messagebox.askokcancel("Muesta", f"Medición {rep+1}/3\n Concentracion {rep+1} = {concentracion_muestra:.2f} g/L")
+            Med=messagebox.askokcancel("Muesta", f"Medición {rep+1}/3\n Concentracion {rep+1} = {concentracion_muestra:.2e} g/L")
             barra_progreso_2['value'] += (1/3)*100  # Avanzar en 1/3
             ventana.update_idletasks()  # Actualizar la interfaz gráfica
             if not Med:
@@ -284,20 +286,25 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
         conc_promedio = np.mean(np.array(concentraciones))
         err_conc= np.std(np.array(concentraciones))
         Concentracion=ufloat(conc_promedio,err_conc)
-        print(f"Concentracion promedio de la muestra: {Concentracion:.3f} mg/mL")
+        print(f"Concentracion promedio de la muestra: {Concentracion:.3e} g/L")
         
-        messagebox.showinfo("Concentracion ", f"Concentración = {Concentracion:.3f}")        
-        # nombre_archivo = 
-        # with open(nombre_archivo, "w") as archivo:
-        #     archivo.write("Intensidad promedio, Absorbancia, Concentración estimada (mg/ml)\n")
-        #     archivo.write("Intensidad promedio, Absorbancia, Concentración estimada (mg/ml)\n")
-        #     archivo.write(f"{promedio_I:.3f}, {absorbancia_muestra:.3f}, {concentracion_muestra:.3f}\n")
-        
+        nombre_archivo = 'muestra_'+fecha_nombre_archivo+'.txt'
+
+        with open(nombre_archivo, "w") as archivo:
+            archivo.write(f'#{fecha_nombre_archivo}\n')
+            archivo.write(f"Fondo = {I0} cuentas \nPendiente = {slope:.3e} \nOrdenada = {intercept:.3e}\n")
+            archivo.write(f"Intensidad - Absorbancia - Concentración estimada (g/L)\n")
+            
+            for i,a,c in zip(intensidades, absorbancias,concentraciones):
+                archivo.write(f"{i:13.2f}{a:13.3e}{c:13.3e}\n")
+            archivo.write(f"Concentracion promedio de la muestra: {Concentracion:.3e} g/L")
+                    
+        messagebox.showinfo("Concentracion ", f"Concentración = {Concentracion:.3e} g/L")        
         print(f"Datos de la muestra guardados en {nombre_archivo}")
     else:
         print("Error: No se obtuvieron suficientes mediciones.")
 
-#%%  Conexión con Arduino y Configuración del puerto seri
+#%% Conexión con Arduino y Configuración del puerto seri
 puertos_disponibles = serial.tools.list_ports.comports()  # Listar los puertos seriales disponibles
 puerto_activo = None
 # Buscar el primer puerto USB activo (ttyUSB*)
@@ -342,7 +349,7 @@ try:
     ###########################################################################
     # Crear la ventana principal
     ventana = tk.Tk()
-    ventana.title("Medición de Absorbancias")
+    ventana.title("G3M - Concentrímetro")
     ventana.geometry("350x320")  # Aumenté el tamaño para acomodar la nueva etiqueta
 
     frame_botones = tk.Frame(ventana)# Crear un Frame para  "Calibrar" y "Usar Calibración"

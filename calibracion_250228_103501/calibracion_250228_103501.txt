@@ -6,6 +6,7 @@ Concentracion (mg/ml), Absorbancia
 0.00, 0.37
 0.01, 0.47
 
+Fondo: 3516.130
 Pendiente: 80.868+/-0.910
 Ordenada: -0.005+/-0.003
 R² = 1.00
