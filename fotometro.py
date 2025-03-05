@@ -10,7 +10,7 @@ from tkinter import simpledialog, messagebox, ttk, filedialog
 from uncertainties import ufloat, unumpy
 import matplotlib.pyplot as plt
 import os
-
+import chardet
 #%% Funciones
 def obtener_nombre_archivo(prefijo):
     """Genera un nombre de archivo único basado en la fecha y hora actual."""
@@ -56,46 +56,47 @@ def medir_intensidad(comando, barra_progreso=None, ventana=None):
 #%% Usar Calibracion existente
 def usar_calibracion():
     """Permite al usuario seleccionar un archivo de calibración y cargar los valores de slope e intercept."""
-    global slope, intercept  # Declarar slope e intercept como globales
-
+    global I0,slope, intercept  # Declarar slope e intercept como globales
+    print('-' * 50, '\nUso calibracion existente')
+    
     # Abrir un diálogo para seleccionar un archivo .txt
-    archivo_calibracion = filedialog.askopenfilename(
-        title="Seleccionar archivo de calibración",
-        filetypes=[("Archivos de texto", "*.txt")]
-    )
-
+    archivo_calibracion = filedialog.askopenfilename()
     if not archivo_calibracion:
         messagebox.showwarning("Advertencia", "No se seleccionó ningún archivo.")
         return
     try:
-        # Intentar abrir el archivo con diferentes codificaciones
-        codificaciones = ["utf-8", "latin-1", "ISO-8859-1"]
-        for codificacion in codificaciones:
-            try:
-                with open(archivo_calibracion, "r", encoding=codificacion) as archivo:
-                    lineas = archivo.readlines()
-
-                    # Buscar las líneas que contienen "Pendiente" y "Ordenada"
-                    for linea in lineas:
-                        if "Pendiente:" in linea:
-                            slope_str = linea.split(":")[1].strip()  # Extraer el valor de la pendiente
-                            slope = float(slope_str.split("+/-")[0].strip())  # Obtener el valor numérico
-                        elif "Ordenada:" in linea:
-                            intercept_str = linea.split(":")[1].strip()  # Extraer el valor de la ordenada
-                            intercept = float(intercept_str.split("+/-")[0].strip())  # Obtener el valor numérico
-
-                if (slope is not None) and (intercept is not None):
-                    boton_medir_I0.config(state="normal")
+        # Detectar la codificación del archivo
+        with open(archivo_calibracion, 'rb') as f:
+            codificacion = chardet.detect(f.read())['encoding']
+        try:
+            # Leer el archivo con la codificación detectada
+            with open(archivo_calibracion, "r", encoding=codificacion) as archivo:
+                lineas = archivo.readlines()
+                
+                # Buscar las líneas que contienen "Pendiente", "Ordenada" y "Fondo"
+                for linea in lineas:
+                    if "Pendiente:" in linea:
+                        slope_str = linea.split(":")[1].strip()  # Extraer el valor de la pendiente
+                        slope = float(slope_str.split("+/-")[0].strip())  # Obtener el valor numérico
+                    elif "Ordenada:" in linea:
+                        intercept_str = linea.split(":")[1].strip()  # Extraer el valor de la ordenada
+                        intercept = float(intercept_str.split("+/-")[0].strip())  # Obtener el valor numérico
+                    elif "Fondo:" in linea:
+                        fondo_str = linea.split(":")[1].strip()  # Extraer el valor del fondo
+                        I0 = float(fondo_str)  # Obtener el valor numérico
+                
+                # Verificar si todos los valores necesarios se cargaron correctamente
+                if (I0 is not None) and (slope is not None) and (intercept is not None):
                     barra_progreso['value'] = 100
-                    messagebox.showinfo("Éxito", f"Valores cargados:\nPendiente: {slope}\nOrdenada: {intercept}")
-                    break  # Salir del bucle si se leyó correctamente
-            except UnicodeDecodeError:
-                continue  # Intentar con la siguiente codificación si falla
-            except Exception as e:
-                messagebox.showerror("Error", f"No se pudo leer el archivo: {e}")
-                break
-        else:
-            messagebox.showerror("Error", "No se pudo leer el archivo con ninguna codificación compatible.")
+                    print(f"Valores cargados:\nFondo: {I0} cnts\nPendiente: {slope}\nOrdenada: {intercept}")
+                    messagebox.showinfo("Uso calibración previa", f"Valores cargados:\nFondo: {I0} cnts\nPendiente: {slope}\nOrdenada: {intercept}")
+                    boton_medir.config(state="normal")
+                else:
+                    messagebox.showerror("Error", "El archivo no contiene todos los valores necesarios.")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo leer el archivo: {e}")
+    
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo leer el archivo: {e}")
 #%%Calibrar
@@ -104,6 +105,7 @@ def calibrar(barra_progreso, ventana):
     Se ingresa la concentracion de la solucion madre y luego se miden las concentraciones de las diluciones: [1/500, 1/250, 1/200, 1/125, 1/100, 1/80] (3 veces c/u)
     A partir de estos datos se calibra la recta Concentracion/Absorbancia
     """
+    print('-'*50,'\nCalibracion iniciada')
     global I0, slope, intercept  # Declarar I0, slope e intercept como globales    
     try:
         conc_madre = simpledialog.askfloat("Concentración madre", "Ingrese la concentración madre (mg/ml):")# Solicitar la concentración madre
@@ -121,7 +123,7 @@ def calibrar(barra_progreso, ventana):
             messagebox.showerror("Error", "Error en la medición del fondo.")
             barra_progreso_3['value']=0
             return None, None
-        
+        print(f'I0 = {I0}')     
         messagebox.showinfo("Información", f"I0 = {I0:.2f}")
         barra_progreso['value'] = 0
         barra_progreso_3['value']=0
@@ -135,11 +137,12 @@ def calibrar(barra_progreso, ventana):
                 return None
             
             mediciones = []
-            
+            print('-'*30,f'\nDilucion = 1/{dil}')
             for _ in range(3):
                 I = medir_intensidad("medir", barra_progreso_3, ventana)
                 if I is not None:
                     mediciones.append(I)
+                    print(f'I = {I}')
                     messagebox.showinfo(f"Dilución 1/{dil}", f"Medición {_+1}/3: I = {I:.2f}")
                     # Actualizar la barra de progreso
                     barra_progreso['value'] += (1 / 18) * 100  # Avanzar en 1/18 (3 medidas x 6 diluciones)
@@ -148,9 +151,10 @@ def calibrar(barra_progreso, ventana):
             
             if len(mediciones) == 3:
                 promedio_I = np.mean(mediciones)
-                err_I = np.std(mediciones)
                 valores_I.append(promedio_I)
-                errores_I.append(err_I)
+                print(f'A = {-np.log10(promedio_I/I0)}')
+                #err_I = np.std(mediciones)
+                #errores_I.append(err_I)
                 #messagebox.showinfo("Promedio", f"Promedio para la dilución 1/{diluciones[i]}: {ufloat(promedio_I,err_I):.2f}")
         
         absorbancias = [-np.log10(I / I0) for I in valores_I]
@@ -183,38 +187,39 @@ def calibrar(barra_progreso, ventana):
         
         #salvo tabla
         with open(os.path.join(output_dir,'calibracion_'+output_date+'.txt'), "w") as archivo:
+            archivo.write(f"# Calibracion realizada el {output_date}\n")
             archivo.write("Concentracion (mg/ml), Absorbancia\n")
             for c, A in zip(concentraciones, absorbancias):
-                archivo.write(f"{c:.2f}, {A:.2f}\n")
-            archivo.write(f"\nPendiente: {pendiente:.3f}\nOrdenada: {ordenada:.3f}\nR² = {resultado.rvalue**2:.2f}\n")
+                archivo.write(f"{c:.3e}, {A:.3e}\n")
+            archivo.write(f"\nFondo: {I0:.3f}\nPendiente: {pendiente:.3f}\nOrdenada: {ordenada:.3f}\nR² = {resultado.rvalue**2:.2f}\n")
         
         messagebox.showinfo("Guardado", f"Datos guardados en {output_dir}")
         if (I0 is not None) and (slope is not None) or (intercept is not None):
             boton_medir.config(state="active")  # Habilitar el botón Medir muestra después de calibrar
-            boton_medir_I0.config(state="disabled")
+            #boton_medir_I0.config(state="disabled")
         
-        return slope, intercept
+        return I0,slope, intercept
         
     except ValueError:
         messagebox.showerror("Error", "Ingrese valores numéricos válidos.")
         return None, None
 #%%Medir el fondo (I0)
 def medir_fondo(barra_progreso_3,ventana):
-    messagebox.showinfo("Medir fondo", "Coloque la cubeta con agua y presione OK para medir el fondo")
-    global I0
-    I0 = medir_intensidad("medir", barra_progreso_3, ventana)
+    #messagebox.showinfo("Medir fondo", "Coloque la cubeta con agua y presione OK para medir el fondo")
+    global I0_bis
+    I0_bis = medir_intensidad("medir", barra_progreso_3, ventana)
     
-    
-    if I0 is None:
+    if I0_bis is None:
         messagebox.showerror("Error", "Error en la medición del fondo.")
         barra_progreso_3['value']=0
         return None, None
     
-    messagebox.showinfo("Información", f"I0 = {I0:.2f}")
+    messagebox.showinfo("Información", f"I0_bis = {I0_bis:.2f}")
     barra_progreso_3['value']=0
     ventana.update_idletasks()
-    if (I0 is not None) and (slope is not None) and (intercept is not None):
-        boton_medir.config(state="normal")  # Habilitar el botón Medir muestra después de calibrar
+    return I0_bis
+    # if (I0 is not None) and (slope is not None) and (intercept is not None):
+    #     boton_medir.config(state="normal")  # Habilitar el botón Medir muestra después de calibrar
            
 #%% Medir Muestra
 def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
@@ -225,6 +230,28 @@ def medir_muestra(slope, intercept, I0,barra_progreso_2,ventana):
         messagebox.showerror("Error", "No se ha realizado la calibración. Verifique los valores de I0, slope e intercept.")
         return None
     
+    MM0=messagebox.askokcancel("Medir fondo", "Coloque la cubeta con agua y presione OK para medir el fondo")
+    if not MM0:
+        return None
+    barra_progreso_2['value'] = 0
+    ventana.update_idletasks() 
+
+    I0_bis=medir_fondo(barra_progreso_3,ventana)
+    print('I0 bis=',I0_bis)
+
+    dif_relativa_I0=abs((I0_bis-I0)/I0)
+    if dif_relativa_I0<0.1:
+        print(f'Diferencia relativa en el fondo menor al 10% ({100*dif_relativa_I0})')
+    else:
+        print(f'Diferencia relativa en el fondo {100*dif_relativa_I0}')
+        Cal_again=messagebox.askyesnocancel(title=None, message='Diferencia relativa en el fondo mayor al 10%\nDesea repetir la calibración?')
+    if not Cal_again:
+        print('aaa')
+
+
+
+
+
     MM=messagebox.askokcancel("Medir muestra", "Coloque la muestra en la cubeta y presione OK...")
     if not MM:
         return None
@@ -298,7 +325,7 @@ for puerto in puertos_disponibles:
             print(f"Puerto inactivo: {puerto.device}")
 # Verificar si se encontró un puerto USB activo
 if puerto_activo:
-    print('-' * 40, '\n', f"Puerto seleccionado: {puerto_activo}")
+    print('-' * 50, '\n', f"Puerto seleccionado: {puerto_activo}")
 else:
     print("No se encontraron puertos USB activos.")
     exit()
@@ -337,12 +364,12 @@ try:
     frame_2 = tk.Frame(ventana)
     frame_2.pack(pady=5)
     #Medir fondo (izquierda)
-    boton_medir_I0 = tk.Button(frame_2, text="medir fondo",  bd=10,bg='blue',state='disabled',command=lambda: medir_fondo(barra_progreso_3, ventana))
-    boton_medir_I0.pack(side=tk.LEFT, padx=5)  # Colocar a la izquierda con un margen
+    #boton_medir_I0 = tk.Button(frame_2, text="medir fondo",  bd=10,bg='blue',state='disabled',command=lambda: medir_fondo(barra_progreso_3, ventana))
+    #boton_medir_I0.pack(side=tk.LEFT, padx=5)  # Colocar a la izquierda con un margen
     # Medir muestra (derecha)
     boton_medir = tk.Button(frame_2, text="Medir muestra",  bd=10,bg='green',state='disabled',
                             command=lambda: medir_muestra(slope, intercept, I0, barra_progreso_2, ventana))
-    boton_medir.pack(side=tk.RIGHT,pady=5)
+    boton_medir.pack(pady=5)
     # Crear una barra de progreso
     barra_progreso_2 = ttk.Progressbar(ventana, orient="horizontal", length=300, mode="determinate")
     barra_progreso_2.pack(pady=10)
