@@ -1,0 +1,9 @@
+#250305_160943
+Fondo = 3516.13 cuentas 
+Pendiente = 8.087e+01 
+Ordenada = -5.000e-03
+Intensidad - Absorbancia - Concentración estimada (g/L)
+      2793.26    9.995e-02    1.298e-03
+      2784.95    1.012e-01    1.314e-03
+      2778.10    1.023e-01    1.327e-03
+Concentracion promedio de la muestra: (1.313+/-0.012)e-03 g/L
