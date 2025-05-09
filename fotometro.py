@@ -173,7 +173,7 @@ def calibrar(barra_progreso, ventana):
     A partir de estos datos se calibra la recta Concentracion/Absorbancia
     """
     print('-'*50,'\nCalibracion iniciada')
-    global slope, intercept,I0_cal  # Declarar I0_cal, slope e intercept como globales    
+    global slope, intercept,I0_cal,err_slope,err_intercept  # Declarar I0_cal, slope e intercept como globales    
     try:
         conc_madre = simpledialog.askfloat("Concentración madre", "Ingrese la concentración madre (mg/ml):")# Solicitar la concentración madre
         if conc_madre is None:  # Si el usuario cancela
@@ -186,12 +186,12 @@ def calibrar(barra_progreso, ventana):
         messagebox.showinfo("Medir fondo", "Coloque la cubeta con agua y presione OK para medir el fondo")
         
         I0_cal = medir_intensidad("medir", 10,barra_progreso_3, ventana)
-        if I0 is None:
+        if I0_cal is None:
             messagebox.showerror("Error", "Error en la medición del fondo.")
             barra_progreso_3['value']=0
             return None, None
-        print(f'I0 = {I0}')     
-        messagebox.showinfo("Información", f"I0 = {I0:.2f}")
+        print(f'I0 cal = {I0_cal}')     
+        messagebox.showinfo("Información", f"I0 = {I0_cal:.2f}")
         barra_progreso['value'] = 0
         barra_progreso_3['value']=0
         ventana.update_idletasks()
@@ -219,12 +219,12 @@ def calibrar(barra_progreso, ventana):
             if len(mediciones) == 3:
                 promedio_I = np.mean(mediciones)
                 valores_I.append(promedio_I)
-                print(f'A = {-np.log10(promedio_I/I0)}')
+                print(f'A = {-np.log10(promedio_I/I0_cal)}')
                 #err_I = np.std(mediciones)
                 #errores_I.append(err_I)
                 #messagebox.showinfo("Promedio", f"Promedio para la dilución 1/{diluciones[i]}: {ufloat(promedio_I,err_I):.2f}")
         
-        absorbancias = [-np.log10(I / I0) for I in valores_I]
+        absorbancias = [-np.log10(I / I0_cal) for I in valores_I]
         
         resultado = stats.linregress(concentraciones, absorbancias)
         slope,slope_err=resultado.slope,resultado.stderr
@@ -258,14 +258,14 @@ def calibrar(barra_progreso, ventana):
             archivo.write("Concentracion (mg/ml), Absorbancia\n")
             for c, A in zip(concentraciones, absorbancias):
                 archivo.write(f"{c:.3e}, {A:.3e}\n")
-            archivo.write(f"\nFondo: {I0:.3f}\nPendiente: {pendiente:.3f}\nOrdenada: {ordenada:.3f}\nR² = {resultado.rvalue**2:.2f}\n")
+            archivo.write(f"\nFondo: {I0_cal:.3f}\nPendiente: {pendiente:.3f}\nOrdenada: {ordenada:.3f}\nR² = {resultado.rvalue**2:.2f}\n")
         
         messagebox.showinfo("Guardado", f"Datos guardados en {output_dir}")
-        if (I0 is not None) and (slope is not None) or (intercept is not None):
+        if (I0_cal is not None) and (slope is not None) or (intercept is not None):
             boton_medir.config(state="active")  # Habilitar el botón Medir muestra después de calibrar
             #boton_medir_I0.config(state="disabled")
         
-        return I0,slope, intercept
+        return I0_cal,slope, intercept
         
     except ValueError:
         messagebox.showerror("Error", "Ingrese valores numéricos válidos.")
